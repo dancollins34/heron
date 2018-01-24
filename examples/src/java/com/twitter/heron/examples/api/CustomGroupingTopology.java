@@ -16,34 +16,36 @@ package com.twitter.heron.examples.api;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 import com.twitter.heron.api.Config;
-import com.twitter.heron.api.HeronSubmitter;
-import com.twitter.heron.api.bolt.BaseRichBolt;
-import com.twitter.heron.api.bolt.OutputCollector;
+import com.twitter.heron.api.HeronTopology;
 import com.twitter.heron.api.grouping.CustomStreamGrouping;
-import com.twitter.heron.api.topology.OutputFieldsDeclarer;
 import com.twitter.heron.api.topology.TopologyBuilder;
 import com.twitter.heron.api.topology.TopologyContext;
-import com.twitter.heron.api.tuple.Tuple;
 import com.twitter.heron.common.basics.ByteAmount;
+import com.twitter.heron.examples.api.bolt.CountPrintBolt;
 import com.twitter.heron.examples.api.spout.TestWordSpout;
 /**
  * This is a basic example of a Storm topology.
  */
-public final class CustomGroupingTopology {
-
-  private CustomGroupingTopology() {
+public final class CustomGroupingTopology implements AbstractExampleTopology{
+  public static void main(String[] args) throws Exception {
+    new CustomGroupingTopology().run(args);
   }
 
-  public static void main(String[] args) throws Exception {
+  @Override
+  public HeronTopology buildTopology() {
     TopologyBuilder builder = new TopologyBuilder();
 
     builder.setSpout("word", new TestWordSpout(), 2);
-    builder.setBolt("mybolt", new MyBolt(), 2)
+    builder.setBolt("mybolt", new CountPrintBolt(10000), 2)
         .customGrouping("word", new MyCustomStreamGrouping());
 
+    return builder.createTopology();
+  }
+
+  @Override
+  public Config buildConfig() {
     Config conf = new Config();
 
     // component resource configuration
@@ -57,32 +59,7 @@ public final class CustomGroupingTopology {
 
     conf.setNumStmgrs(2);
 
-    HeronSubmitter.submitTopology(args[0], conf, builder.createTopology());
-  }
-
-  public static class MyBolt extends BaseRichBolt {
-    private static final long serialVersionUID = 1913733461146490337L;
-    private long nItems;
-
-    @Override
-    @SuppressWarnings("rawtypes")
-    public void prepare(
-        Map conf,
-        TopologyContext context,
-        OutputCollector acollector) {
-      nItems = 0;
-    }
-
-    @Override
-    public void execute(Tuple tuple) {
-      if (++nItems % 10000 == 0) {
-        System.out.println(tuple.getString(0));
-      }
-    }
-
-    @Override
-    public void declareOutputFields(OutputFieldsDeclarer declarer) {
-    }
+    return conf;
   }
 
   public static class MyCustomStreamGrouping implements CustomStreamGrouping {

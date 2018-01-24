@@ -19,6 +19,7 @@ import java.util.Random;
 
 import com.twitter.heron.api.Config;
 import com.twitter.heron.api.HeronSubmitter;
+import com.twitter.heron.api.HeronTopology;
 import com.twitter.heron.api.bolt.BaseRichBolt;
 import com.twitter.heron.api.bolt.OutputCollector;
 import com.twitter.heron.api.metric.GlobalMetrics;
@@ -31,29 +32,35 @@ import com.twitter.heron.api.tuple.Fields;
 import com.twitter.heron.api.tuple.Tuple;
 import com.twitter.heron.api.tuple.Values;
 import com.twitter.heron.api.utils.Utils;
+import com.twitter.heron.examples.api.bolt.ExclamationBolt;
+import com.twitter.heron.examples.api.spout.AckingTestWordSpout;
 import com.twitter.heron.simulator.Simulator;
 
 /**
  * This is three stage topology. Spout emits to bolt to bolt.
  */
-public final class MultiStageAckingTopology {
-
-  private MultiStageAckingTopology() {
-  }
+public final class MultiStageAckingTopology implements AbstractExampleTopology{
+  static int parallelism = 2;
 
   public static void main(String[] args) throws Exception {
-    if (args.length != 1) {
-      throw new RuntimeException("Please specify the name of the topology");
-    }
+    new MultiSpoutExclamationTopology().run(args);
+  }
+
+  @Override
+  public HeronTopology buildTopology() {
     TopologyBuilder builder = new TopologyBuilder();
 
-    int parallelism = 2;
-    builder.setSpout("word", new AckingTestWordSpout(), parallelism);
-    builder.setBolt("exclaim1", new ExclamationBolt(true), parallelism)
+    builder.setSpout("word", new AckingTestWordSpout(1), parallelism);
+    builder.setBolt("exclaim1", new ExclamationBolt(true, 10000, true, false), parallelism)
         .shuffleGrouping("word");
-    builder.setBolt("exclaim2", new ExclamationBolt(false), parallelism)
+    builder.setBolt("exclaim2", new ExclamationBolt(true, 10000, false, false), parallelism)
         .shuffleGrouping("exclaim1");
 
+    return builder.createTopology();
+  }
+
+  @Override
+  public Config buildConfig() {
     Config conf = new Config();
     conf.setDebug(true);
 
@@ -80,105 +87,8 @@ public final class MultiStageAckingTopology {
         ExampleResources.getContainerRam(3 * parallelism, parallelism));
     conf.setContainerCpuRequested(1);
 
-    if (args != null && args.length > 0) {
-      conf.setNumStmgrs(parallelism);
-      HeronSubmitter.submitTopology(args[0], conf, builder.createTopology());
-    } else {
-      Simulator simulator = new Simulator();
-      simulator.submitTopology("test", conf, builder.createTopology());
-      Utils.sleep(10000);
-      simulator.killTopology("test");
-      simulator.shutdown();
-    }
-  }
+    conf.setNumStmgrs(parallelism);
 
-  public static class AckingTestWordSpout extends BaseRichSpout {
-    private static final long serialVersionUID = -5972291205871728684L;
-    private SpoutOutputCollector collector;
-    private String[] words;
-    private Random rand;
-
-    public AckingTestWordSpout() {
-    }
-
-    @SuppressWarnings("rawtypes")
-    public void open(
-        Map conf,
-        TopologyContext context,
-        SpoutOutputCollector acollector) {
-      collector = acollector;
-      words = new String[]{"nathan", "mike", "jackson", "golda", "bertels"};
-      rand = new Random();
-    }
-
-    public void close() {
-    }
-
-    public void nextTuple() {
-      // We explicitly slow down the spout to avoid the stream mgr to be the bottleneck
-      Utils.sleep(1);
-      final String word = words[rand.nextInt(words.length)];
-      // To enable acking, we need to emit tuple with MessageId, which is an object
-      collector.emit(new Values(word), "MESSAGE_ID");
-    }
-
-    public void ack(Object msgId) {
-    }
-
-    public void fail(Object msgId) {
-    }
-
-    public void declareOutputFields(OutputFieldsDeclarer declarer) {
-      declarer.declare(new Fields("word"));
-    }
-  }
-
-  public static class ExclamationBolt extends BaseRichBolt {
-    private static final long serialVersionUID = -3226618846531432832L;
-    private OutputCollector collector;
-    private long nItems;
-    private long startTime;
-    private boolean emit;
-
-    public ExclamationBolt(boolean emit) {
-      this.emit = emit;
-    }
-
-    @Override
-    @SuppressWarnings("rawtypes")
-    public void prepare(
-        Map conf,
-        TopologyContext context,
-        OutputCollector acollector) {
-      collector = acollector;
-      nItems = 0;
-      startTime = System.currentTimeMillis();
-    }
-
-    @Override
-    public void execute(Tuple tuple) {
-      // We need to ack a tuple when we consider it is done successfully
-      // Or we could fail it by invoking collector.fail(tuple)
-      // If we do not do the ack or fail explicitly
-      // After the MessageTimeout Seconds, which could be set in Config,
-      // the spout will fail this tuple
-      ++nItems;
-      if (nItems % 10000 == 0) {
-        long latency = System.currentTimeMillis() - startTime;
-        System.out.println("Bolt processed " + nItems + " tuples in " + latency + " ms");
-        GlobalMetrics.incr("selected_items");
-      }
-      if (emit) {
-        collector.emit(tuple, new Values(tuple.getString(0) + "!!!"));
-      }
-      collector.ack(tuple);
-    }
-
-    @Override
-    public void declareOutputFields(OutputFieldsDeclarer declarer) {
-      if (emit) {
-        declarer.declare(new Fields("word"));
-      }
-    }
+    return conf;
   }
 }

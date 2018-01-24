@@ -14,75 +14,27 @@
 
 package com.twitter.heron.examples.api;
 
-import java.util.List;
-import java.util.Map;
-import java.util.logging.Logger;
-
 import com.twitter.heron.api.Config;
-import com.twitter.heron.api.HeronSubmitter;
+import com.twitter.heron.api.HeronTopology;
 import com.twitter.heron.api.bolt.BaseWindowedBolt;
-import com.twitter.heron.api.bolt.OutputCollector;
-import com.twitter.heron.api.topology.OutputFieldsDeclarer;
 import com.twitter.heron.api.topology.TopologyBuilder;
-import com.twitter.heron.api.topology.TopologyContext;
-import com.twitter.heron.api.tuple.Fields;
-import com.twitter.heron.api.tuple.Tuple;
-import com.twitter.heron.api.tuple.Values;
-import com.twitter.heron.api.windowing.TupleWindow;
 import com.twitter.heron.common.basics.ByteAmount;
 import com.twitter.heron.examples.api.bolt.PrinterBolt;
 import com.twitter.heron.examples.api.bolt.SlidingWindowSumBolt;
+import com.twitter.heron.examples.api.bolt.TumblingWindowAvgBolt;
 import com.twitter.heron.examples.api.spout.RandomIntegerSpout;
 
 /**
  * A sample topology that demonstrates the usage of {@link com.twitter.heron.api.bolt.IWindowedBolt}
  * to calculate sliding window sum.
  */
-public final class SlidingWindowTopology {
-
-  private static final Logger LOG = Logger.getLogger(SlidingWindowTopology.class.getName());
-
-  private SlidingWindowTopology() {
-  }
-
-  /*
-   * Computes tumbling window average
-   */
-  private static class TumblingWindowAvgBolt extends BaseWindowedBolt {
-    private static final long serialVersionUID = 8234864761939263530L;
-    private OutputCollector collector;
-
-    @Override
-    @SuppressWarnings("HiddenField")
-    public void prepare(Map<String, Object> topoConf, TopologyContext context, OutputCollector
-        collector) {
-      this.collector = collector;
-    }
-
-    @Override
-    public void execute(TupleWindow inputWindow) {
-      int sum = 0;
-      List<Tuple> tuplesInWindow = inputWindow.get();
-      LOG.fine("Events in current window: " + tuplesInWindow.size());
-      if (tuplesInWindow.size() > 0) {
-                /*
-                * Since this is a tumbling window calculation,
-                * we use all the tuples in the window to compute the avg.
-                */
-        for (Tuple tuple : tuplesInWindow) {
-          sum += (int) tuple.getValue(0);
-        }
-        collector.emit(new Values(sum / tuplesInWindow.size()));
-      }
-    }
-
-    @Override
-    public void declareOutputFields(OutputFieldsDeclarer declarer) {
-      declarer.declare(new Fields("avg"));
-    }
-  }
-
+public final class SlidingWindowTopology implements AbstractExampleTopology{
   public static void main(String[] args) throws Exception {
+    new SlidingWindowTopology().run(args);
+  }
+
+  @Override
+  public HeronTopology buildTopology() {
     TopologyBuilder builder = new TopologyBuilder();
     builder.setSpout("integer", new RandomIntegerSpout(), 1);
     builder.setBolt("slidingsum", new SlidingWindowSumBolt()
@@ -93,9 +45,14 @@ public final class SlidingWindowTopology {
         .shuffleGrouping("slidingsum");
     builder.setBolt("printer", new PrinterBolt(), 1)
         .shuffleGrouping("tumblingavg");
+
+    return builder.createTopology();
+  }
+
+  @Override
+  public Config buildConfig() {
     Config conf = new Config();
     conf.setDebug(true);
-    String topoName = "test";
 
     conf.setComponentRam("integer", ByteAmount.fromGigabytes(1));
     conf.setComponentRam("slidingsum", ByteAmount.fromGigabytes(1));
@@ -105,9 +62,6 @@ public final class SlidingWindowTopology {
     conf.setContainerDiskRequested(ByteAmount.fromGigabytes(5));
     conf.setContainerCpuRequested(4);
 
-    if (args != null && args.length > 0) {
-      topoName = args[0];
-    }
-    HeronSubmitter.submitTopology(topoName, conf, builder.createTopology());
+    return conf;
   }
 }

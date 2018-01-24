@@ -21,6 +21,7 @@ import java.util.Random;
 
 import com.twitter.heron.api.Config;
 import com.twitter.heron.api.HeronSubmitter;
+import com.twitter.heron.api.HeronTopology;
 import com.twitter.heron.api.bolt.BaseRichBolt;
 import com.twitter.heron.api.bolt.OutputCollector;
 import com.twitter.heron.api.hooks.ITaskHook;
@@ -41,23 +42,28 @@ import com.twitter.heron.api.tuple.Tuple;
 import com.twitter.heron.api.tuple.Values;
 import com.twitter.heron.api.utils.Utils;
 import com.twitter.heron.common.basics.ByteAmount;
+import com.twitter.heron.examples.api.bolt.ExclamationBolt;
+import com.twitter.heron.examples.api.spout.AckingTestWordSpout;
 
 
-public final class TaskHookTopology {
-
-  private TaskHookTopology() {
+public final class TaskHookTopology implements AbstractExampleTopology{
+  public static void main(String[] args) throws Exception {
+    new TaskHookTopology().run(args);
   }
 
-  public static void main(String[] args) throws Exception {
-    if (args.length != 1) {
-      throw new RuntimeException("Specify topology name");
-    }
+  @Override
+  public HeronTopology buildTopology() {
     TopologyBuilder builder = new TopologyBuilder();
 
     builder.setSpout("word", new AckingTestWordSpout(), 2);
-    builder.setBolt("count", new CountBolt(), 2)
+    builder.setBolt("count", new ExclamationBolt(true, 10000, false, true), 2)
         .shuffleGrouping("word");
 
+    return builder.createTopology();
+  }
+
+  @Override
+  public Config buildConfig() {
     Config conf = new Config();
     conf.setDebug(true);
     // Put an arbitrary large number here if you don't want to slow the topology down
@@ -82,7 +88,8 @@ public final class TaskHookTopology {
 
 
     conf.setNumStmgrs(2);
-    HeronSubmitter.submitTopology(args[0], conf, builder.createTopology());
+
+    return conf;
   }
 
   public static class TestTaskHook implements ITaskHook {
@@ -191,98 +198,6 @@ public final class TaskHookTopology {
         System.out.println(info.getFailLatency().toMillis());
         System.out.println(info.getTuple());
       }
-    }
-  }
-
-  public static class AckingTestWordSpout extends BaseRichSpout {
-    private static final long serialVersionUID = 6702214894823377325L;
-    private SpoutOutputCollector collector;
-    private String[] words;
-    private Random rand;
-
-    public AckingTestWordSpout() {
-    }
-
-    @SuppressWarnings("rawtypes")
-    public void open(
-        Map conf,
-        TopologyContext context,
-        SpoutOutputCollector acollector) {
-      collector = acollector;
-      words = new String[]{"nathan", "mike", "jackson", "golda", "bertels"};
-      rand = new Random();
-
-      // Add task hook dynamically
-      context.addTaskHook(
-          new TestTaskHook("This TestTaskHook is constructed by AckingTestWordSpout"));
-    }
-
-    public void close() {
-    }
-
-    public void nextTuple() {
-      // We explicitly slow down the spout to avoid the stream mgr to be the bottleneck
-      Utils.sleep(1);
-      final String word = words[rand.nextInt(words.length)];
-      // To enable acking, we need to emit tuple with MessageId, which is an object
-      collector.emit(new Values(word), word);
-    }
-
-    public void ack(Object msgId) {
-    }
-
-    public void fail(Object msgId) {
-    }
-
-    public void declareOutputFields(OutputFieldsDeclarer declarer) {
-      declarer.declare(new Fields("word"));
-    }
-  }
-
-  public static class CountBolt extends BaseRichBolt {
-    private static final long serialVersionUID = 851874677718634075L;
-    private OutputCollector collector;
-    private long nItems;
-    private long startTime;
-
-    @Override
-    @SuppressWarnings("rawtypes")
-    public void prepare(
-        Map conf,
-        TopologyContext context,
-        OutputCollector acollector) {
-      collector = acollector;
-      nItems = 0;
-      startTime = System.currentTimeMillis();
-
-      // Add task hook dynamically
-      context.addTaskHook(new TestTaskHook("This TestTaskHook is constructed by CountBolt"));
-
-    }
-
-    @Override
-    public void execute(Tuple tuple) {
-      // We need to ack a tuple when we consider it is done successfully
-      // Or we could fail it by invoking collector.fail(tuple)
-      // If we do not do the ack or fail explicitly
-      // After the MessageTimeout Seconds, which could be set in Config, the spout will
-      // fail this tuple
-      ++nItems;
-      if (nItems % 10000 == 0) {
-        long latency = System.currentTimeMillis() - startTime;
-        System.out.println("Bolt processed " + nItems + " tuples in " + latency + " ms");
-        GlobalMetrics.incr("selected_items");
-        // Here we explicitly forget to do the ack or fail
-        // It would trigger fail on this tuple on spout end after MessageTimeout Seconds
-      } else if (nItems % 2 == 0) {
-        collector.fail(tuple);
-      } else {
-        collector.ack(tuple);
-      }
-    }
-
-    @Override
-    public void declareOutputFields(OutputFieldsDeclarer declarer) {
     }
   }
 }
