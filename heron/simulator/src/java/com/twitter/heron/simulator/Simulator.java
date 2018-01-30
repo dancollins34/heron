@@ -34,6 +34,7 @@ import com.twitter.heron.proto.system.PhysicalPlans;
 import com.twitter.heron.simulator.executors.InstanceExecutor;
 import com.twitter.heron.simulator.executors.MetricsExecutor;
 import com.twitter.heron.simulator.executors.StreamExecutor;
+import com.twitter.heron.simulator.statemanagement.StateManager;
 import com.twitter.heron.simulator.utils.TopologyManager;
 
 /**
@@ -49,6 +50,7 @@ public class Simulator {
   private final ExecutorService threadsPool = Executors.newCachedThreadPool();
   private SystemConfig systemConfig;
   private StreamExecutor streamExecutor;
+  private StateManager stateManager;
 
   private MetricsExecutor metricsExecutor;
 
@@ -123,6 +125,9 @@ public class Simulator {
 
     LOG.info("Physical Plan: \n" + topologyManager.getPhysicalPlan());
 
+    // Create the state manager
+    stateManager = new StateManager(topologyManager.getPhysicalPlan().getInstancesCount());
+
     // Create the stream executor
     streamExecutor = new StreamExecutor(topologyManager);
 
@@ -133,7 +138,8 @@ public class Simulator {
     for (PhysicalPlans.Instance instance : topologyManager.getPhysicalPlan().getInstancesList()) {
       InstanceExecutor instanceExecutor = new InstanceExecutor(
           topologyManager.getPhysicalPlan(),
-          instance.getInstanceId()
+          instance.getInstanceId(),
+          stateManager
       );
 
       streamExecutor.addInstanceExecutor(instanceExecutor);

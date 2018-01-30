@@ -14,14 +14,22 @@
 
 package com.twitter.heron.simulator.instance;
 
+import java.io.Serializable;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
 
 import com.twitter.heron.api.generated.TopologyAPI;
+import com.twitter.heron.api.state.HashMapState;
+import com.twitter.heron.api.state.State;
+import com.twitter.heron.api.topology.IStatefulComponent;
 import com.twitter.heron.common.basics.ByteAmount;
 import com.twitter.heron.common.basics.Communicator;
 import com.twitter.heron.common.basics.SingletonRegistry;
@@ -32,6 +40,8 @@ import com.twitter.heron.common.utils.tuple.TupleImpl;
 import com.twitter.heron.instance.IInstance;
 import com.twitter.heron.proto.ckptmgr.CheckpointManager;
 import com.twitter.heron.proto.system.HeronTuples;
+import com.twitter.heron.simulator.executors.InstanceExecutor;
+import com.twitter.heron.spi.statefulstorage.Checkpoint;
 
 public class BoltInstance
     extends com.twitter.heron.instance.bolt.BoltInstance implements IInstance {
@@ -39,10 +49,13 @@ public class BoltInstance
   private final Duration instanceExecuteBatchTime;
   private final ByteAmount instanceExecuteBatchSize;
 
+  private final InstanceExecutor parentExecutor;
+
   public BoltInstance(PhysicalPlanHelper helper,
                       Communicator<Message> streamInQueue,
                       Communicator<Message> streamOutQueue,
-                      SlaveLooper looper) {
+                      SlaveLooper looper,
+                      InstanceExecutor parentExecutor) {
     super(helper, streamInQueue, streamOutQueue, looper);
     SystemConfig systemConfig =
         (SystemConfig) SingletonRegistry.INSTANCE.getSingleton(SystemConfig.HERON_SYSTEM_CONFIG);
@@ -50,6 +63,7 @@ public class BoltInstance
     this.instanceExecuteBatchTime = systemConfig.getInstanceExecuteBatchTime();
     this.instanceExecuteBatchSize = systemConfig.getInstanceExecuteBatchSize();
 
+    this.parentExecutor = parentExecutor;
   }
 
   private void handleDataTuple(HeronTuples.HeronDataTuple dataTuple,
@@ -122,5 +136,19 @@ public class BoltInstance
         }
       }
     }
+  }
+
+  @Override
+  public void persistState(String checkpointId){
+    if (!isTopologyStateful) {
+      throw new RuntimeException("Could not save a non-stateful topology's state");
+    }
+
+    // Checkpoint
+    if (bolt instanceof IStatefulComponent) {
+      ((IStatefulComponent) bolt).preSave(checkpointId);
+    }
+
+    parentExecutor.persistState(checkpointId, instanceState);
   }
 }

@@ -60,8 +60,8 @@ public class SpoutInstance implements IInstance {
   private final boolean ackEnabled;
   private final boolean enableMessageTimeouts;
 
-  private final boolean isTopologyStateful;
-  private State<Serializable, Serializable> instanceState;
+  protected final boolean isTopologyStateful;
+  protected State<Serializable, Serializable> instanceState;
 
   private final SlaveLooper looper;
 

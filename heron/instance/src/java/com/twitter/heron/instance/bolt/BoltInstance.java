@@ -62,9 +62,9 @@ public class BoltInstance implements IInstance {
   // The bolt will read Data tuples from streamInQueue
   private final Communicator<Message> streamInQueue;
 
-  private final boolean isTopologyStateful;
+  protected final boolean isTopologyStateful;
 
-  private State<Serializable, Serializable> instanceState;
+  protected State<Serializable, Serializable> instanceState;
 
   private final SlaveLooper looper;
 

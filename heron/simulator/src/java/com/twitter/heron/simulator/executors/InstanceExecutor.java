@@ -14,12 +14,16 @@
 
 package com.twitter.heron.simulator.executors;
 
+import java.io.Serializable;
+import java.util.HashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import com.google.protobuf.Message;
 
 import com.twitter.heron.api.generated.TopologyAPI;
+import com.twitter.heron.api.state.HashMapState;
+import com.twitter.heron.api.state.State;
 import com.twitter.heron.common.basics.Communicator;
 import com.twitter.heron.common.basics.SlaveLooper;
 import com.twitter.heron.common.utils.metrics.MetricsCollector;
@@ -29,6 +33,8 @@ import com.twitter.heron.proto.system.Metrics;
 import com.twitter.heron.proto.system.PhysicalPlans;
 import com.twitter.heron.simulator.instance.BoltInstance;
 import com.twitter.heron.simulator.instance.SpoutInstance;
+import com.twitter.heron.simulator.statemanagement.SimulatedCheckpoint;
+import com.twitter.heron.simulator.statemanagement.StateManager;
 
 /**
  * InstanceExecutor helps to group all necessary resources for an instance into a class and,
@@ -58,8 +64,13 @@ public class InstanceExecutor implements Runnable {
 
   private boolean isInstanceStarted = false;
 
+  private final StateManager stateManager;
+
   public InstanceExecutor(PhysicalPlans.PhysicalPlan physicalPlan,
-                          String instanceId) {
+                          String instanceId,
+                          StateManager stateManager) {
+    this.stateManager = stateManager;
+
     streamInQueue = new Communicator<>();
     streamOutQueue = new Communicator<>();
     metricsOutQueue = new Communicator<>();
@@ -101,8 +112,8 @@ public class InstanceExecutor implements Runnable {
 
   protected IInstance createInstance() {
     return (physicalPlanHelper.getMySpout() != null)
-        ? new SpoutInstance(physicalPlanHelper, streamInQueue, streamOutQueue, looper)
-        : new BoltInstance(physicalPlanHelper, streamInQueue, streamOutQueue, looper);
+        ? new SpoutInstance(physicalPlanHelper, streamInQueue, streamOutQueue, looper, this)
+        : new BoltInstance(physicalPlanHelper, streamInQueue, streamOutQueue, looper, this);
   }
 
   protected PhysicalPlanHelper createPhysicalPlanHelper(PhysicalPlans.PhysicalPlan physicalPlan,
@@ -186,6 +197,28 @@ public class InstanceExecutor implements Runnable {
     looper.loop();
   }
 
+  public void persistState(String checkpointId, State<Serializable, Serializable> state) {
+    HashMapState<Serializable, Serializable> clonedState = new HashMapState<>();
+
+    for (Serializable key : state.keySet()) {
+      clonedState.put(key, state.get(key));
+    }
+
+    try {
+      stateManager.store(new SimulatedCheckpoint(
+          checkpointId,
+          physicalPlanHelper.getMyComponent(),
+          physicalPlanHelper.getMyTaskId(),
+          clonedState
+      ));
+    } catch (StateManager.LockClosedException e){
+      // This means that the state tried to be stored after the reset process began. This should not
+      // happen, and will be logged, but is a non-issue
+      LOG.info("Attempted to persist state when state manager was locked: " +
+          physicalPlanHelper.getMyInstanceId());
+    }
+  }
+
   public void stop() {
     toStop = true;
     looper.wakeUp();
@@ -201,8 +234,27 @@ public class InstanceExecutor implements Runnable {
     looper.wakeUp();
   }
 
+  public void reboot() {
+    toStop = true;
+    looper.wakeUp();
+    startInstance();
+  }
+
   private void startInstance() {
-    instance.init(null);
+    String checkpointId = stateManager.getMaxRestorableCheckpointId();
+    SimulatedCheckpoint checkpoint = stateManager.restore(
+        checkpointId,
+        physicalPlanHelper.getMyComponent(),
+        physicalPlanHelper.getMyTaskId()
+    );
+
+    State<Serializable, Serializable> state = null;
+
+    if (checkpoint != null){
+      state = checkpoint.getState();
+    }
+
+    instance.init(state);
     instance.start();
     isInstanceStarted = true;
     LOG.info("Started instance.");

@@ -20,6 +20,7 @@ import java.util.Map;
 import com.google.protobuf.Message;
 
 import com.twitter.heron.api.Config;
+import com.twitter.heron.api.topology.IStatefulComponent;
 import com.twitter.heron.common.basics.ByteAmount;
 import com.twitter.heron.common.basics.Communicator;
 import com.twitter.heron.common.basics.SingletonRegistry;
@@ -28,6 +29,9 @@ import com.twitter.heron.common.basics.TypeUtils;
 import com.twitter.heron.common.config.SystemConfig;
 import com.twitter.heron.common.utils.misc.PhysicalPlanHelper;
 import com.twitter.heron.instance.IInstance;
+import com.twitter.heron.proto.ckptmgr.CheckpointManager;
+import com.twitter.heron.proto.system.HeronTuples;
+import com.twitter.heron.simulator.executors.InstanceExecutor;
 
 public class SpoutInstance
     extends com.twitter.heron.instance.spout.SpoutInstance implements IInstance {
@@ -37,13 +41,17 @@ public class SpoutInstance
   private final Duration instanceEmitBatchTime;
   private final ByteAmount instanceEmitBatchSize;
 
+  private final InstanceExecutor parentExecutor;
+
   /**
    * The SuppressWarnings should go away once TOPOLOGY_ENABLE_ACKING is removed
    */
   @SuppressWarnings("deprecation")
   public SpoutInstance(PhysicalPlanHelper helper,
                        Communicator<Message> streamInQueue,
-                       Communicator<Message> streamOutQueue, SlaveLooper looper) {
+                       Communicator<Message> streamOutQueue,
+                       SlaveLooper looper,
+                       InstanceExecutor parentExecutor) {
     super(helper, streamInQueue, streamOutQueue, looper);
     Map<String, Object> config = helper.getTopologyContext().getTopologyConfig();
     SystemConfig systemConfig =
@@ -59,6 +67,8 @@ public class SpoutInstance
       // This is strictly for backwards compatibility
       this.ackEnabled = Boolean.parseBoolean((String) config.get(Config.TOPOLOGY_ENABLE_ACKING));
     }
+
+    this.parentExecutor = parentExecutor;
   }
 
   @Override
@@ -94,5 +104,19 @@ public class SpoutInstance
         break;
       }
     }
+  }
+
+  @Override
+  public void persistState(String checkpointId){
+    if (!isTopologyStateful) {
+      throw new RuntimeException("Could not save a non-stateful topology's state");
+    }
+
+    // Checkpoint
+    if (spout instanceof IStatefulComponent) {
+      ((IStatefulComponent) spout).preSave(checkpointId);
+    }
+
+    parentExecutor.persistState(checkpointId, instanceState);
   }
 }
