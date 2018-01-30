@@ -14,6 +14,10 @@
 
 package com.twitter.heron.simulator.executors;
 
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
@@ -24,9 +28,11 @@ import java.util.logging.Logger;
 
 import com.google.protobuf.Message;
 
+import com.twitter.heron.api.Config;
 import com.twitter.heron.api.generated.TopologyAPI;
 import com.twitter.heron.common.basics.SlaveLooper;
 import com.twitter.heron.common.basics.WakeableLooper;
+import com.twitter.heron.proto.ckptmgr.CheckpointManager;
 import com.twitter.heron.proto.system.HeronTuples;
 import com.twitter.heron.proto.system.PhysicalPlans;
 import com.twitter.heron.simulator.utils.TopologyManager;
@@ -36,12 +42,20 @@ import com.twitter.heron.simulator.utils.XORManager;
 public class StreamExecutor implements Runnable {
   public static final int NUM_BUCKETS = 3;
 
+  public static final float DEFAULT_STATEFUL_CHECKPOINT_INTERVAL_SECONDS = 5;
+
   private static final Logger LOG = Logger.getLogger(InstanceExecutor.class.getName());
 
   // TaskId -> InstanceExecutor
   private final Map<Integer, InstanceExecutor> taskIdToInstanceExecutor;
 
   private final TopologyManager topologyManager;
+
+  private final Long statefulCheckpointIntervalMillis;
+
+  private Long mostRecentStatefulCheckpointTimestamp = 0L;
+
+  private final Long statefulRestoreIntervalMillis;
 
   private final Set<String> spoutSets;
 
@@ -51,7 +65,9 @@ public class StreamExecutor implements Runnable {
 
   private final WakeableLooper looper;
 
-  public StreamExecutor(TopologyManager topologyManager) {
+  public StreamExecutor(TopologyManager topologyManager,
+                        Config config,
+                        Long statefulRestoreIntervalMillis) {
     this.topologyManager = topologyManager;
 
     this.taskIdToInstanceExecutor = new HashMap<>();
@@ -66,6 +82,20 @@ public class StreamExecutor implements Runnable {
     );
 
     this.tupleCache = new TupleCache();
+
+    statefulCheckpointIntervalMillis = (Long) config.getOrDefault(
+        Config.TOPOLOGY_STATEFUL_CHECKPOINT_INTERVAL_SECONDS,
+        DEFAULT_STATEFUL_CHECKPOINT_INTERVAL_SECONDS
+    );
+
+    if (statefulRestoreIntervalMillis < 0){
+      this.statefulRestoreIntervalMillis = Long.MAX_VALUE;
+    } else if (statefulRestoreIntervalMillis < statefulCheckpointIntervalMillis) {
+      throw new RuntimeException("Stateful restore interval must be strictly greater than " +
+          "stateful checkpoint interval.");
+    } else {
+      this.statefulRestoreIntervalMillis = statefulRestoreIntervalMillis;
+    }
   }
 
   public void addInstanceExecutor(InstanceExecutor instanceExecutor) {
@@ -85,11 +115,51 @@ public class StreamExecutor implements Runnable {
     LOG.info("Stream_Executor starts");
 
     addStreamExecutorTasks();
+
+    if (topologyManager.getTopology().hasState()) {
+      addStatefulCheckpointTask();
+    }
+
     looper.loop();
   }
 
   public void stop() {
     looper.exitLoop();
+  }
+
+  /**
+   * Add the task to send out stateful checkpoints at a given interval to the instances
+   */
+  protected void addStatefulCheckpointTask(){
+    Runnable statefulCheckpointTask = new Runnable() {
+      @Override
+      public void run() {
+        Long refTime = System.currentTimeMillis();
+
+        if (refTime - mostRecentStatefulCheckpointTimestamp >= statefulCheckpointIntervalMillis) {
+          mostRecentStatefulCheckpointTimestamp = refTime;
+          String checkpointId = DateTimeFormatter.ISO_DATE_TIME.format(
+            LocalDateTime.ofInstant(
+                Instant.ofEpochMilli(refTime),
+                ZoneId.systemDefault()
+            )
+          );
+
+          CheckpointManager.InitiateStatefulCheckpoint checkpointTuple =
+              CheckpointManager.
+                  InitiateStatefulCheckpoint.
+                  newBuilder().
+                  setCheckpointId(checkpointId).
+                  build();
+
+          for (Map.Entry<Integer, InstanceExecutor> entry : taskIdToInstanceExecutor.entrySet()) {
+            entry.getValue().getStreamInQueue().offer(checkpointTuple);
+          }
+        }
+      }
+    };
+
+    looper.addTasksOnWakeup(statefulCheckpointTask);
   }
 
   protected void addStreamExecutorTasks() {

@@ -234,12 +234,6 @@ public class InstanceExecutor implements Runnable {
     looper.wakeUp();
   }
 
-  public void reboot() {
-    toStop = true;
-    looper.wakeUp();
-    startInstance();
-  }
-
   private void startInstance() {
     String checkpointId = stateManager.getMaxRestorableCheckpointId();
     SimulatedCheckpoint checkpoint = stateManager.restore(

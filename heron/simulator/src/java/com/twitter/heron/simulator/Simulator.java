@@ -45,6 +45,7 @@ public class Simulator {
 
   private static final Logger LOG = Logger.getLogger(Simulator.class.getName());
   private final List<InstanceExecutor> instanceExecutors = new LinkedList<>();
+  private Long statefulRestoreIntervalMillis = -1L;
 
   // Thread pool to run StreamExecutor, MetricsExecutor and InstanceExecutor
   private final ExecutorService threadsPool = Executors.newCachedThreadPool();
@@ -59,6 +60,17 @@ public class Simulator {
   }
 
   public Simulator(boolean initialize) {
+    if (initialize) {
+      init();
+    }
+  }
+
+  public Simulator(long statefulRestoreIntervalMillis) {
+    this.statefulRestoreIntervalMillis = statefulRestoreIntervalMillis;
+  }
+
+  public Simulator(boolean initialize, long statefulRestoreIntervalMillis) {
+    this.statefulRestoreIntervalMillis = statefulRestoreIntervalMillis;
     if (initialize) {
       init();
     }
@@ -129,7 +141,11 @@ public class Simulator {
     stateManager = new StateManager(topologyManager.getPhysicalPlan().getInstancesCount());
 
     // Create the stream executor
-    streamExecutor = new StreamExecutor(topologyManager);
+    streamExecutor = new StreamExecutor(
+        topologyManager,
+        heronConfig,
+        statefulRestoreIntervalMillis
+    );
 
     // Create the metrics executor
     metricsExecutor = new MetricsExecutor(systemConfig);
