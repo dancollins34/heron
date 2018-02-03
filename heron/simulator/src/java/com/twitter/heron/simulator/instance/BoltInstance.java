@@ -14,21 +14,14 @@
 
 package com.twitter.heron.simulator.instance;
 
-import java.io.Serializable;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Collection;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
 
 import com.twitter.heron.api.generated.TopologyAPI;
-import com.twitter.heron.api.state.HashMapState;
-import com.twitter.heron.api.state.State;
 import com.twitter.heron.api.topology.IStatefulComponent;
 import com.twitter.heron.common.basics.ByteAmount;
 import com.twitter.heron.common.basics.Communicator;
@@ -41,7 +34,6 @@ import com.twitter.heron.instance.IInstance;
 import com.twitter.heron.proto.ckptmgr.CheckpointManager;
 import com.twitter.heron.proto.system.HeronTuples;
 import com.twitter.heron.simulator.executors.InstanceExecutor;
-import com.twitter.heron.spi.statefulstorage.Checkpoint;
 
 public class BoltInstance
     extends com.twitter.heron.instance.bolt.BoltInstance implements IInstance {

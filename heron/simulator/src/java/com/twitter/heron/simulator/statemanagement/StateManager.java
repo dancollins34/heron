@@ -13,6 +13,7 @@
 //  limitations under the License.
 package com.twitter.heron.simulator.statemanagement;
 
+import java.io.Serializable;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -199,5 +200,7 @@ public class StateManager{
     topologyLock.unlock();
   }
 
-  public static class LockClosedException extends Exception{}
+  public static class LockClosedException extends Exception implements Serializable {
+    private static final long serialVersionUID = -987123490781234L;
+  }
 }

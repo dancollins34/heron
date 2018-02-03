@@ -42,8 +42,6 @@ import com.twitter.heron.simulator.utils.XORManager;
 public class StreamExecutor implements Runnable {
   public static final int NUM_BUCKETS = 3;
 
-  public static final float DEFAULT_STATEFUL_CHECKPOINT_INTERVAL_SECONDS = 5;
-
   private static final Logger LOG = Logger.getLogger(InstanceExecutor.class.getName());
 
   // TaskId -> InstanceExecutor
@@ -55,8 +53,6 @@ public class StreamExecutor implements Runnable {
 
   private Long mostRecentStatefulCheckpointTimestamp = 0L;
 
-  private final Long statefulRestoreIntervalMillis;
-
   private final Set<String> spoutSets;
 
   private final XORManager xorManager;
@@ -66,8 +62,7 @@ public class StreamExecutor implements Runnable {
   private final WakeableLooper looper;
 
   public StreamExecutor(TopologyManager topologyManager,
-                        Config config,
-                        Long statefulRestoreIntervalMillis) {
+                        Long statefulCheckpointIntervalMillis) {
     this.topologyManager = topologyManager;
 
     this.taskIdToInstanceExecutor = new HashMap<>();
@@ -83,19 +78,7 @@ public class StreamExecutor implements Runnable {
 
     this.tupleCache = new TupleCache();
 
-    statefulCheckpointIntervalMillis = (Long) config.getOrDefault(
-        Config.TOPOLOGY_STATEFUL_CHECKPOINT_INTERVAL_SECONDS,
-        DEFAULT_STATEFUL_CHECKPOINT_INTERVAL_SECONDS
-    );
-
-    if (statefulRestoreIntervalMillis < 0){
-      this.statefulRestoreIntervalMillis = Long.MAX_VALUE;
-    } else if (statefulRestoreIntervalMillis < statefulCheckpointIntervalMillis) {
-      throw new RuntimeException("Stateful restore interval must be strictly greater than " +
-          "stateful checkpoint interval.");
-    } else {
-      this.statefulRestoreIntervalMillis = statefulRestoreIntervalMillis;
-    }
+    this.statefulCheckpointIntervalMillis = statefulCheckpointIntervalMillis;
   }
 
   public void addInstanceExecutor(InstanceExecutor instanceExecutor) {

@@ -42,10 +42,12 @@ import com.twitter.heron.simulator.utils.TopologyManager;
  * for multiple topologies.
  */
 public class Simulator {
+  public static final String DEFAULT_STATEFUL_CHECKPOINT_INTERVAL_SECONDS = "5";
 
   private static final Logger LOG = Logger.getLogger(Simulator.class.getName());
   private final List<InstanceExecutor> instanceExecutors = new LinkedList<>();
-  private Long statefulRestoreIntervalMillis = -1L;
+  private Long statefulRestoreIntervalMillis = Long.MAX_VALUE;
+  private Long statefulCheckpointIntervalMillis;
 
   // Thread pool to run StreamExecutor, MetricsExecutor and InstanceExecutor
   private final ExecutorService threadsPool = Executors.newCachedThreadPool();
@@ -66,13 +68,25 @@ public class Simulator {
   }
 
   public Simulator(long statefulRestoreIntervalMillis) {
+    this();
     this.statefulRestoreIntervalMillis = statefulRestoreIntervalMillis;
   }
 
   public Simulator(boolean initialize, long statefulRestoreIntervalMillis) {
+    this(initialize);
     this.statefulRestoreIntervalMillis = statefulRestoreIntervalMillis;
-    if (initialize) {
-      init();
+  }
+
+  private void initStatefulCheckpointParameters(Config config){
+    statefulCheckpointIntervalMillis = Long.parseLong(
+      (String) config.getOrDefault(
+              Config.TOPOLOGY_STATEFUL_CHECKPOINT_INTERVAL_SECONDS,
+              DEFAULT_STATEFUL_CHECKPOINT_INTERVAL_SECONDS
+      )) * 1000;
+
+    if (statefulRestoreIntervalMillis < statefulCheckpointIntervalMillis) {
+        throw new RuntimeException("Stateful restore interval must be strictly greater than " +
+                "stateful checkpoint interval.");
     }
   }
 
@@ -124,13 +138,16 @@ public class Simulator {
             setState(TopologyAPI.TopologyState.RUNNING).
             getTopology();
 
+    this.initStatefulCheckpointParameters(heronConfig);
+
     if (!TopologyUtils.verifyTopology(topologyToRun)) {
       throw new RuntimeException("Topology object is Malformed");
     }
 
     // TODO (nlu): add simulator support stateful processing
     if (isTopologyStateful(heronConfig)) {
-      throw new RuntimeException("Stateful topology is not supported");
+      System.out.println("Running stateful topology...");
+      // throw new RuntimeException("Stateful topology is not supported");
     }
 
     TopologyManager topologyManager = new TopologyManager(topologyToRun);
@@ -143,8 +160,7 @@ public class Simulator {
     // Create the stream executor
     streamExecutor = new StreamExecutor(
         topologyManager,
-        heronConfig,
-        statefulRestoreIntervalMillis
+        statefulCheckpointIntervalMillis
     );
 
     // Create the metrics executor
@@ -163,15 +179,19 @@ public class Simulator {
       instanceExecutors.add(instanceExecutor);
     }
 
+    stateManager.lockAndResetForRestore();
+
     // Start - run executors
     // Add exception handler for any uncaught exception here.
     Thread.setDefaultUncaughtExceptionHandler(new DefaultExceptionHandler());
 
     threadsPool.execute(metricsExecutor);
-    threadsPool.execute(streamExecutor);
     for (InstanceExecutor instanceExecutor : instanceExecutors) {
       threadsPool.execute(instanceExecutor);
     }
+    threadsPool.execute(streamExecutor);
+
+    stateManager.unlockAfterRestored();
   }
 
   public void killTopology(String topologyName) {
@@ -182,9 +202,11 @@ public class Simulator {
 
   public void activate(String topologyName) {
     LOG.info("To activate topology: " + topologyName);
+    stateManager.lockAndResetForRestore();
     for (InstanceExecutor executor : instanceExecutors) {
       executor.activate();
     }
+    stateManager.unlockAfterRestored();
     LOG.info("Activated topology: " + topologyName);
   }
 

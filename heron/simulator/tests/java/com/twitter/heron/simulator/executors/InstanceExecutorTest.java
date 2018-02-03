@@ -27,6 +27,7 @@ import com.twitter.heron.common.utils.metrics.MetricsCollector;
 import com.twitter.heron.common.utils.misc.PhysicalPlanHelper;
 import com.twitter.heron.instance.IInstance;
 import com.twitter.heron.proto.system.PhysicalPlans;
+import com.twitter.heron.simulator.statemanagement.StateManager;
 import com.twitter.heron.simulator.utils.TopologyManager;
 
 import com.twitter.heron.simulator.utils.TopologyManagerTest;
@@ -46,7 +47,7 @@ public class InstanceExecutorTest {
     topology = TopologyManagerTest.getTestTopology();
     plan = new TopologyManager(topology).getPhysicalPlan();
     instanceId = plan.getInstances(0).getInstanceId();
-    instanceExecutor = Mockito.spy(new InstanceExecutor(plan, instanceId));
+    instanceExecutor = Mockito.spy(new InstanceExecutor(plan, instanceId, null));
     Mockito.doReturn(Mockito.mock(IInstance.class)).when(instanceExecutor).createInstance();
   }
 

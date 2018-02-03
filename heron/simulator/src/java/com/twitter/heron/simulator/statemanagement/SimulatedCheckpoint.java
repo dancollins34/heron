@@ -13,13 +13,15 @@
 //  limitations under the License.
 package com.twitter.heron.simulator.statemanagement;
 
+import java.io.Serializable;
+
 import com.twitter.heron.api.state.State;
 
 public class SimulatedCheckpoint {
   private String checkpointId;
   private String component;
   private Integer taskId;
-  private State state;
+  private State<Serializable, Serializable> state;
 
   /**
    * An object like import com.twitter.heron.spi.statefulstorage.Checkpoint for the simulator which
@@ -35,7 +37,7 @@ public class SimulatedCheckpoint {
       String checkpointId,
       String component,
       Integer taskId,
-      State state
+      State<Serializable, Serializable> state
   ) {
     this.checkpointId = checkpointId;
     this.component = component;
@@ -55,7 +57,7 @@ public class SimulatedCheckpoint {
     return taskId;
   }
 
-  public State getState() {
+  public State<Serializable, Serializable> getState() {
     return state;
   }
 }
