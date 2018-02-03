@@ -39,7 +39,7 @@ public class WindowSumBolt extends BaseWindowedBolt {
 
   @Override
   public void execute(TupleWindow inputWindow) {
-    int sum = counts.get("sum");
+    int sum = counts.getOrDefault("sum", 0);
     for (Tuple tuple : inputWindow.get()) {
       sum += tuple.getIntegerByField("value");
     }

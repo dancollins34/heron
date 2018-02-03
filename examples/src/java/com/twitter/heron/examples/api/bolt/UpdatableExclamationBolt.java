@@ -18,8 +18,10 @@ import java.util.List;
 import com.twitter.heron.api.topology.IUpdatable;
 
 public class UpdatableExclamationBolt extends ExclamationBolt implements IUpdatable{
+  private static final long serialVersionUID = -84923479018010L;
+
   public UpdatableExclamationBolt(boolean shouldAck, long modulo) {
-    super(shouldAck, modulo);
+    super(shouldAck, modulo, false, false);
   }
 
   /**

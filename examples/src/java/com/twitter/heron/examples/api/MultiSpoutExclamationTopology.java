@@ -37,7 +37,7 @@ public final class MultiSpoutExclamationTopology implements AbstractExampleTopol
     builder.setSpout("word0", new TestWordSpout(), 2);
     builder.setSpout("word1", new TestWordSpout(), 2);
     builder.setSpout("word2", new TestWordSpout(), 2);
-    builder.setBolt("exclaim1", new ExclamationBolt(false, 100000), 2)
+    builder.setBolt("exclaim1", new ExclamationBolt(false, 100000, false, false), 2)
         .shuffleGrouping("word0")
         .shuffleGrouping("word1")
         .shuffleGrouping("word2");
